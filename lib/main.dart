@@ -1,4 +1,6 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
   runApp(const MyApp());
@@ -23,6 +25,20 @@ class TreeNode {
 
   TreeNode({required this.id, required this.label, List<TreeNode>? children})
     : children = children ?? [];
+
+  Map<String, dynamic> toJson() => {
+    'id': id,
+    'label': label,
+    'children': children.map((c) => c.toJson()).toList(),
+  };
+
+  factory TreeNode.fromJson(Map<String, dynamic> json) => TreeNode(
+    id: json['id'],
+    label: json['label'],
+    children: (json['children'] as List)
+        .map((e) => TreeNode.fromJson(e))
+        .toList(),
+  );
 }
 
 class GraphViewPage extends StatefulWidget {
@@ -36,7 +52,7 @@ class _GraphViewPageState extends State<GraphViewPage> {
   final ScrollController _vController = ScrollController();
   final ScrollController _hController = ScrollController();
 
-  late TreeNode root;
+  TreeNode? root; // nullable until loaded
   int _idCounter = 1;
 
   static const double nodeW = 100;
@@ -49,18 +65,49 @@ class _GraphViewPageState extends State<GraphViewPage> {
   @override
   void initState() {
     super.initState();
-    root = TreeNode(id: 'n0', label: 'Root');
+    _loadTree();
+  }
+
+  Future<void> _loadTree() async {
+    final prefs = await SharedPreferences.getInstance();
+    final jsonString = prefs.getString('treeData');
+    if (jsonString != null) {
+      setState(() {
+        root = TreeNode.fromJson(jsonDecode(jsonString));
+        _idCounter = _findMaxId(root!);
+      });
+    } else {
+      setState(() {
+        root = TreeNode(id: 'n0', label: 'Root');
+      });
+    }
+  }
+
+  Future<void> _saveTree() async {
+    if (root == null) return;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('treeData', jsonEncode(root!.toJson()));
+  }
+
+  int _findMaxId(TreeNode node) {
+    final numPart = int.tryParse(node.id.replaceAll('n', '')) ?? 0;
+    int maxId = numPart;
+    for (final c in node.children) {
+      maxId = maxId > _findMaxId(c) ? maxId : _findMaxId(c);
+    }
+    return maxId;
   }
 
   void addChild(String parentId) {
-    final parent = _findNodeById(root, parentId);
+    if (root == null) return;
+    final parent = _findNodeById(root!, parentId);
     if (parent == null) return;
 
-    final depthOfParent = _computeNodeDepth(root, parentId);
+    final depthOfParent = _computeNodeDepth(root!, parentId);
     if (depthOfParent + 1 > maxDepth) {
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(const SnackBar(content: Text("❌ Max depth 100 reached!")));
+      ).showSnackBar(const SnackBar(content: Text("❌ Max depth reached!")));
       return;
     }
 
@@ -69,15 +116,18 @@ class _GraphViewPageState extends State<GraphViewPage> {
         TreeNode(id: 'n${++_idCounter}', label: 'Node $_idCounter'),
       );
     });
+    _saveTree();
   }
 
   void removeNode(String nodeId) {
-    if (nodeId == root.id) return;
-    final parent = _findParent(root, nodeId);
+    if (root == null) return;
+    if (nodeId == root!.id) return;
+    final parent = _findParent(root!, nodeId);
     if (parent == null) return;
     setState(() {
       parent.children.removeWhere((c) => c.id == nodeId);
     });
+    _saveTree();
   }
 
   TreeNode? _findNodeById(TreeNode node, String id) {
@@ -128,7 +178,6 @@ class _GraphViewPageState extends State<GraphViewPage> {
     return 1 + maxChild;
   }
 
-  // Depth of specific node in tree
   int _computeNodeDepth(TreeNode node, String id, [int depth = 1]) {
     if (node.id == id) return depth;
     for (final c in node.children) {
@@ -168,26 +217,30 @@ class _GraphViewPageState extends State<GraphViewPage> {
 
   @override
   Widget build(BuildContext context) {
+    if (root == null) {
+      return const Scaffold(body: Center(child: CircularProgressIndicator()));
+    }
+
     final screenSize = MediaQuery.of(context).size;
 
-    final widths = _computeSubtreeWidths(root);
-    final rootWidth = widths[root.id] ?? nodeW;
+    final widths = _computeSubtreeWidths(root!);
+    final rootWidth = widths[root!.id] ?? nodeW;
     final canvasWidth = (rootWidth + canvasMargin * 2).clamp(
       screenSize.width,
       double.infinity,
     );
-    final depth = _computeDepth(root);
+    final depth = _computeDepth(root!);
     final canvasHeight =
         (depth * verticalGapBetweenLevels) + nodeH + canvasMargin * 2;
 
     final startX = (canvasWidth - rootWidth) / 2;
-    final positions = _computePositions(root, widths, startX, canvasMargin);
+    final positions = _computePositions(root!, widths, startX, canvasMargin);
 
     return Scaffold(
       appBar: AppBar(
         backgroundColor: Colors.grey,
-        title: Center(
-          child: const Text(
+        title: const Center(
+          child: Text(
             'Graph Builder',
             style: TextStyle(fontWeight: FontWeight.bold),
           ),
@@ -222,11 +275,11 @@ class _GraphViewPageState extends State<GraphViewPage> {
                           CustomPaint(
                             size: Size(canvasWidth, canvasHeight),
                             painter: ConnectorPainter(
-                              root: root,
+                              root: root!,
                               positions: positions,
                             ),
                           ),
-                          ..._buildNodeWidgets(root, positions),
+                          ..._buildNodeWidgets(root!, positions),
                         ],
                       ),
                     ),
@@ -280,7 +333,7 @@ class _GraphViewPageState extends State<GraphViewPage> {
                   ),
                 ),
               ),
-              if (n.id != root.id)
+              if (n.id != root!.id)
                 Positioned(
                   right: -5,
                   top: -5,
@@ -351,10 +404,7 @@ class _NodeWidgetState extends State<_NodeWidget>
       vsync: this,
       duration: const Duration(milliseconds: 400),
     );
-
     _scale = CurvedAnimation(parent: _controller, curve: Curves.easeOutBack);
-
-    // Start animation when widget is inserted
     _controller.forward();
   }
 
@@ -434,8 +484,9 @@ class ConnectorPainter extends CustomPainter {
       final childCenters = <Offset>[];
       for (final c in node.children) {
         final cp = positions[c.id];
-        if (cp != null)
+        if (cp != null) {
           childCenters.add(cp + const Offset(nodeW / 2, nodeH / 2));
+        }
       }
       if (childCenters.isEmpty) return;
 
@@ -444,7 +495,6 @@ class ConnectorPainter extends CustomPainter {
       } else {
         final childY = childCenters.first.dy;
         final midY = (parentCenter.dy + childY) / 2;
-
         canvas.drawLine(parentCenter, Offset(parentCenter.dx, midY), paint);
 
         final leftX = childCenters
