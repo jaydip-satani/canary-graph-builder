@@ -54,13 +54,14 @@ class _GraphViewPageState extends State<GraphViewPage> {
 
   TreeNode? root;
   int _idCounter = 1;
+  String? selectedNodeId;
 
   static const double nodeW = 100;
   static const double nodeH = 100;
   static const double horizontalGapBetweenChildren = 20;
   static const double verticalGapBetweenLevels = 120;
   static const double canvasMargin = 100;
-  static const int maxDepth = 10;
+  static const int maxDepth = 100;
 
   @override
   void initState() {
@@ -98,38 +99,6 @@ class _GraphViewPageState extends State<GraphViewPage> {
     return maxId;
   }
 
-  void addChild(String parentId) {
-    if (root == null) return;
-    final parent = _findNodeById(root!, parentId);
-    if (parent == null) return;
-
-    final depthOfParent = _computeNodeDepth(root!, parentId);
-    if (depthOfParent + 1 > maxDepth) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text("❌ Max depth reached!")));
-      return;
-    }
-
-    setState(() {
-      parent.children.add(
-        TreeNode(id: 'n${++_idCounter}', label: 'Node $_idCounter'),
-      );
-    });
-    _saveTree();
-  }
-
-  void removeNode(String nodeId) {
-    if (root == null) return;
-    if (nodeId == root!.id) return;
-    final parent = _findParent(root!, nodeId);
-    if (parent == null) return;
-    setState(() {
-      parent.children.removeWhere((c) => c.id == nodeId);
-    });
-    _saveTree();
-  }
-
   TreeNode? _findNodeById(TreeNode node, String id) {
     if (node.id == id) return node;
     for (final c in node.children) {
@@ -146,6 +115,24 @@ class _GraphViewPageState extends State<GraphViewPage> {
       if (deeper != null) return deeper;
     }
     return null;
+  }
+
+  int _computeDepth(TreeNode node) {
+    if (node.children.isEmpty) return 1;
+    int maxChild = 0;
+    for (final c in node.children) {
+      maxChild = maxChild > _computeDepth(c) ? maxChild : _computeDepth(c);
+    }
+    return 1 + maxChild;
+  }
+
+  int _computeNodeDepth(TreeNode node, String id, [int depth = 1]) {
+    if (node.id == id) return depth;
+    for (final c in node.children) {
+      final d = _computeNodeDepth(c, id, depth + 1);
+      if (d != -1) return d;
+    }
+    return -1;
   }
 
   Map<String, double> _computeSubtreeWidths(TreeNode node) {
@@ -167,24 +154,6 @@ class _GraphViewPageState extends State<GraphViewPage> {
 
     helper(node);
     return widths;
-  }
-
-  int _computeDepth(TreeNode node) {
-    if (node.children.isEmpty) return 1;
-    int maxChild = 0;
-    for (final c in node.children) {
-      maxChild = maxChild > _computeDepth(c) ? maxChild : _computeDepth(c);
-    }
-    return 1 + maxChild;
-  }
-
-  int _computeNodeDepth(TreeNode node, String id, [int depth = 1]) {
-    if (node.id == id) return depth;
-    for (final c in node.children) {
-      final d = _computeNodeDepth(c, id, depth + 1);
-      if (d != -1) return d;
-    }
-    return -1;
   }
 
   Map<String, Offset> _computePositions(
@@ -215,6 +184,103 @@ class _GraphViewPageState extends State<GraphViewPage> {
     return positions;
   }
 
+  void addChildToSelectedNode() {
+    if (root == null || selectedNodeId == null) return;
+    final parent = _findNodeById(root!, selectedNodeId!);
+    if (parent == null) return;
+
+    final depthOfParent = _computeNodeDepth(root!, selectedNodeId!);
+    if (depthOfParent + 1 > maxDepth) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text("❌ Max depth reached!")));
+      return;
+    }
+
+    setState(() {
+      parent.children.add(
+        TreeNode(id: 'n${++_idCounter}', label: 'Node $_idCounter'),
+      );
+    });
+    _saveTree();
+  }
+
+  void removeNode(String nodeId) {
+    if (root == null || nodeId == root!.id) return;
+    final parent = _findParent(root!, nodeId);
+    if (parent == null) return;
+    setState(() {
+      parent.children.removeWhere((c) => c.id == nodeId);
+      if (selectedNodeId == nodeId) selectedNodeId = null;
+    });
+    _saveTree();
+  }
+
+  List<Widget> _buildNodeWidgets(TreeNode node, Map<String, Offset> positions) {
+    final list = <Widget>[];
+
+    void helper(TreeNode n) {
+      final pos = positions[n.id] ?? Offset.zero;
+      final childCount = n.children.length;
+
+      list.add(
+        Positioned(
+          left: pos.dx,
+          top: pos.dy,
+          child: Stack(
+            clipBehavior: Clip.none,
+            children: [
+              MouseRegion(
+                cursor: SystemMouseCursors.click,
+                child: GestureDetector(
+                  onTap: () {
+                    setState(() {
+                      selectedNodeId = n.id;
+                    });
+                  },
+                  child: _NodeWidget(
+                    label: "${n.label}\n($childCount children)",
+                    width: nodeW,
+                    height: nodeH,
+                    isSelected: n.id == selectedNodeId,
+                  ),
+                ),
+              ),
+              if (n.id != root!.id)
+                Positioned(
+                  right: -5,
+                  top: -5,
+                  child: MouseRegion(
+                    cursor: SystemMouseCursors.click,
+                    child: GestureDetector(
+                      onTap: () => removeNode(n.id),
+                      child: Container(
+                        padding: const EdgeInsets.all(2),
+                        decoration: const BoxDecoration(
+                          color: Colors.red,
+                          shape: BoxShape.circle,
+                        ),
+                        child: const Icon(
+                          Icons.close,
+                          size: 14,
+                          color: Colors.white,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        ),
+      );
+
+      for (final c in n.children) helper(c);
+    }
+
+    helper(node);
+    return list;
+  }
+
   @override
   Widget build(BuildContext context) {
     if (root == null) {
@@ -222,7 +288,6 @@ class _GraphViewPageState extends State<GraphViewPage> {
     }
 
     final screenSize = MediaQuery.of(context).size;
-
     final widths = _computeSubtreeWidths(root!);
     final rootWidth = widths[root!.id] ?? nodeW;
     final canvasWidth = (rootWidth + canvasMargin * 2).clamp(
@@ -232,7 +297,6 @@ class _GraphViewPageState extends State<GraphViewPage> {
     final depth = _computeDepth(root!);
     final canvasHeight =
         (depth * verticalGapBetweenLevels) + nodeH + canvasMargin * 2;
-
     final startX = (canvasWidth - rootWidth) / 2;
     final positions = _computePositions(root!, widths, startX, canvasMargin);
 
@@ -303,69 +367,38 @@ class _GraphViewPageState extends State<GraphViewPage> {
               ),
             ),
           ),
-        ],
-      ),
-    );
-  }
-
-  List<Widget> _buildNodeWidgets(TreeNode node, Map<String, Offset> positions) {
-    final list = <Widget>[];
-
-    void helper(TreeNode n) {
-      final pos = positions[n.id] ?? Offset.zero;
-      final childCount = n.children.length;
-
-      list.add(
-        Positioned(
-          left: pos.dx,
-          top: pos.dy,
-          child: Stack(
-            clipBehavior: Clip.none,
-            children: [
-              MouseRegion(
-                cursor: SystemMouseCursors.click,
-                child: GestureDetector(
-                  onTap: () => addChild(n.id),
-                  child: _NodeWidget(
-                    label: "${n.label}\n($childCount children)",
-                    width: nodeW,
-                    height: nodeH,
+          Align(
+            alignment: Alignment.bottomCenter,
+            child: Padding(
+              padding: const EdgeInsets.only(bottom: 20),
+              child: ElevatedButton.icon(
+                onPressed: addChildToSelectedNode,
+                style: ElevatedButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 20,
+                    vertical: 12,
+                  ),
+                  backgroundColor: Colors.blueAccent,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(30),
+                  ),
+                  elevation: 6,
+                ),
+                icon: const Icon(Icons.add, color: Colors.white),
+                label: const Text(
+                  "Add Node",
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
                   ),
                 ),
               ),
-              if (n.id != root!.id)
-                Positioned(
-                  right: -5,
-                  top: -5,
-                  child: MouseRegion(
-                    cursor: SystemMouseCursors.click,
-                    child: GestureDetector(
-                      onTap: () => removeNode(n.id),
-                      child: Container(
-                        padding: const EdgeInsets.all(2),
-                        decoration: const BoxDecoration(
-                          color: Colors.red,
-                          shape: BoxShape.circle,
-                        ),
-                        child: const Icon(
-                          Icons.close,
-                          size: 14,
-                          color: Colors.white,
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-            ],
+            ),
           ),
-        ),
-      );
-
-      for (final c in n.children) helper(c);
-    }
-
-    helper(node);
-    return list;
+        ],
+      ),
+    );
   }
 
   @override
@@ -380,11 +413,13 @@ class _NodeWidget extends StatelessWidget {
   final String label;
   final double width;
   final double height;
+  final bool isSelected;
 
   const _NodeWidget({
     required this.label,
     required this.width,
     required this.height,
+    this.isSelected = false,
     super.key,
   });
 
@@ -404,6 +439,9 @@ class _NodeWidget extends StatelessWidget {
                 colors: [Color(0xFF2D9CDB), Color(0xFF2F80ED)],
               ),
               shape: BoxShape.circle,
+              border: isSelected
+                  ? Border.all(color: Colors.yellow, width: 3)
+                  : null,
               boxShadow: [
                 BoxShadow(
                   color: Colors.black.withOpacity(0.2),
