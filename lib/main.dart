@@ -55,6 +55,7 @@ class _GraphViewPageState extends State<GraphViewPage> {
   TreeNode? root;
   int _idCounter = 1;
   String? selectedNodeId;
+  List<String> _actionStack = []; // Stack for undo actions
 
   static const double nodeW = 100;
   static const double nodeH = 100;
@@ -198,10 +199,14 @@ class _GraphViewPageState extends State<GraphViewPage> {
     }
 
     setState(() {
-      parent.children.add(
-        TreeNode(id: 'n${++_idCounter}', label: 'Node $_idCounter'),
+      final newNode = TreeNode(
+        id: 'n${++_idCounter}',
+        label: 'Node $_idCounter',
       );
+      parent.children.add(newNode);
+      _actionStack.add(newNode.id);
     });
+
     _saveTree();
   }
 
@@ -209,11 +214,19 @@ class _GraphViewPageState extends State<GraphViewPage> {
     if (root == null || nodeId == root!.id) return;
     final parent = _findParent(root!, nodeId);
     if (parent == null) return;
+
     setState(() {
       parent.children.removeWhere((c) => c.id == nodeId);
       if (selectedNodeId == nodeId) selectedNodeId = null;
     });
+
     _saveTree();
+  }
+
+  void undoLastAction() {
+    if (_actionStack.isEmpty) return;
+    final lastNodeId = _actionStack.removeLast();
+    removeNode(lastNodeId);
   }
 
   List<Widget> _buildNodeWidgets(TreeNode node, Map<String, Offset> positions) {
@@ -371,28 +384,57 @@ class _GraphViewPageState extends State<GraphViewPage> {
             alignment: Alignment.bottomCenter,
             child: Padding(
               padding: const EdgeInsets.only(bottom: 20),
-              child: ElevatedButton.icon(
-                onPressed: addChildToSelectedNode,
-                style: ElevatedButton.styleFrom(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 20,
-                    vertical: 12,
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  ElevatedButton.icon(
+                    onPressed: undoLastAction,
+                    style: ElevatedButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 20,
+                        vertical: 12,
+                      ),
+                      backgroundColor: Colors.redAccent,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(30),
+                      ),
+                      elevation: 6,
+                    ),
+                    icon: const Icon(Icons.arrow_back, color: Colors.white),
+                    label: const Text(
+                      "Undo",
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
                   ),
-                  backgroundColor: Colors.blueAccent,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(30),
+                  const SizedBox(width: 20),
+                  ElevatedButton.icon(
+                    onPressed: addChildToSelectedNode,
+                    style: ElevatedButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 20,
+                        vertical: 12,
+                      ),
+                      backgroundColor: Colors.blueAccent,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(30),
+                      ),
+                      elevation: 6,
+                    ),
+                    icon: const Icon(Icons.add, color: Colors.white),
+                    label: const Text(
+                      "Add Node",
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
                   ),
-                  elevation: 6,
-                ),
-                icon: const Icon(Icons.add, color: Colors.white),
-                label: const Text(
-                  "Add Node",
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 16,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
+                ],
               ),
             ),
           ),
