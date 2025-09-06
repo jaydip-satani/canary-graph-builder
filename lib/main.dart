@@ -52,7 +52,7 @@ class _GraphViewPageState extends State<GraphViewPage> {
   final ScrollController _vController = ScrollController();
   final ScrollController _hController = ScrollController();
 
-  TreeNode? root; // nullable until loaded
+  TreeNode? root;
   int _idCounter = 1;
 
   static const double nodeW = 100;
@@ -376,7 +376,7 @@ class _GraphViewPageState extends State<GraphViewPage> {
   }
 }
 
-class _NodeWidget extends StatefulWidget {
+class _NodeWidget extends StatelessWidget {
   final String label;
   final double width;
   final double height;
@@ -389,66 +389,37 @@ class _NodeWidget extends StatefulWidget {
   });
 
   @override
-  State<_NodeWidget> createState() => _NodeWidgetState();
-}
-
-class _NodeWidgetState extends State<_NodeWidget>
-    with SingleTickerProviderStateMixin {
-  late AnimationController _controller;
-  late Animation<double> _scale;
-
-  @override
-  void initState() {
-    super.initState();
-    _controller = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 400),
-    );
-    _scale = CurvedAnimation(parent: _controller, curve: Curves.easeOutBack);
-    _controller.forward();
-  }
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
-
-  @override
   Widget build(BuildContext context) {
-    return ScaleTransition(
-      scale: _scale,
-      child: SizedBox(
-        width: widget.width,
-        height: widget.height,
-        child: Material(
-          color: Colors.transparent,
-          child: Center(
-            child: Container(
-              width: widget.width,
-              height: widget.height,
-              decoration: BoxDecoration(
-                gradient: const LinearGradient(
-                  colors: [Color(0xFF2D9CDB), Color(0xFF2F80ED)],
-                ),
-                shape: BoxShape.circle,
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withOpacity(0.2),
-                    blurRadius: 8,
-                    offset: const Offset(2, 4),
-                  ),
-                ],
+    return SizedBox(
+      width: width,
+      height: height,
+      child: Material(
+        color: Colors.transparent,
+        child: Center(
+          child: Container(
+            width: width,
+            height: height,
+            decoration: BoxDecoration(
+              gradient: const LinearGradient(
+                colors: [Color(0xFF2D9CDB), Color(0xFF2F80ED)],
               ),
-              child: Center(
-                child: Text(
-                  widget.label,
-                  textAlign: TextAlign.center,
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontWeight: FontWeight.bold,
-                    fontSize: 12,
-                  ),
+              shape: BoxShape.circle,
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.2),
+                  blurRadius: 8,
+                  offset: const Offset(2, 4),
+                ),
+              ],
+            ),
+            child: Center(
+              child: Text(
+                label,
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.bold,
+                  fontSize: 12,
                 ),
               ),
             ),
